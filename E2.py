@@ -77,8 +77,10 @@ GPIO.setup(solenoid_pin, GPIO.OUT)
 # Function to trigger the solenoid
 def trigger_solenoid():
     GPIO.output(solenoid_pin, 1)
+    time.sleep(1)
 
 set_angle(0)
+time.sleep(1)
 GPIO.output(solenoid_pin, 0)
 rclpy.init()
 node = Listener()
