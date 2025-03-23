@@ -23,6 +23,8 @@ import numpy as np
 import math
 import cmath
 import time
+import tf2_ros
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 # constants
 rotatechange = 0.1
@@ -97,6 +99,9 @@ class AutoNav(Node):
         self.scan_subscription  # prevent unused variable warning
         self.laser_range = np.array([])
 
+        self.tfBuffer = tf2_ros.Buffer(cache_time=rclpy.duration.Duration(seconds=5.0))
+        self.tfListener = tf2_ros.TransformListener(self.tfBuffer, self)
+
 
     def odom_callback(self, msg):
         # self.get_logger().info('In odom_callback')
@@ -105,23 +110,54 @@ class AutoNav(Node):
 
 
     def occ_callback(self, msg):
-        # self.get_logger().info('In occ_callback')
-        # create numpy array
-        msgdata = np.array(msg.data)
-        # compute histogram to identify percent of bins with -1
-        # occ_counts = np.histogram(msgdata,occ_bins)
-        # calculate total number of bins
-        # total_bins = msg.info.width * msg.info.height
-        # log the info
-        # self.get_logger().info('Unmapped: %i Unoccupied: %i Occupied: %i Total: %i' % (occ_counts[0][0], occ_counts[0][1], occ_counts[0][2], total_bins))
+        self.get_logger().info("Received map data!")
 
-        # make msgdata go from 0 instead of -1, reshape into 2D
-        oc2 = msgdata + 1
-        # reshape to 2D array using column order
-        # self.occdata = np.uint8(oc2.reshape(msg.info.height,msg.info.width,order='F'))
-        self.occdata = np.uint8(oc2.reshape(msg.info.height,msg.info.width))
-        # print to file
-        # np.savetxt(mapfile, self.occdata)
+        # find transform to obtain base_link coordinates in the map frame
+        # lookup_transform(target_frame, source_frame, time)
+        try:
+            trans = self.tfBuffer.lookup_transform(
+                'map', 'base_link', 
+                rclpy.time.Time().to_msg(),
+                timeout=rclpy.duration.Duration(seconds=0.5)
+            )
+        except (LookupException, ConnectivityException, ExtrapolationException) as e:
+            print(e)
+            return
+            
+        cur_pos = trans.transform.translation
+        self.x = cur_pos.x
+        self.y = cur_pos.y
+        
+        # convert quaternion to Euler angles
+        # cur_rot = trans.transform.rotation
+        # roll, pitch, yaw = euler_from_quaternion(cur_rot.x, cur_rot.y, cur_rot.z, cur_rot.w)
+        # self.roll,self.pitch,self.yaw = roll,pitch,yaw
+        # self.get_logger().info('Rot-Yaw: R: %f D: %f' % (yaw, np.degrees(yaw)))
+
+        # get map resolution and map origin 
+        map_res = msg.info.resolution
+        map_origin = msg.info.origin.position
+
+        # get map grid positions for x, y position
+        grid_x = round((self.x - map_origin.x) / map_res) # column in numpy 
+        grid_y = round(((self.y - map_origin.y) / map_res)) # row in numpy
+        
+        # save the map to map_data.txt 
+        # note: we put indicate -8 as the current robot position
+        received_map = np.array(msg.data).reshape((msg.info.height, msg.info.width))
+        received_map[grid_y][grid_x] = '-8'
+        received_map[0][0] = '-5'
+        final_map = np.fliplr(np.rot90(received_map))
+
+        self.currow = grid_y
+        self.curcol = grid_x
+        self.cur_map = final_map
+
+        self.get_logger().info("Robot position is at " + str(grid_y) + " " + str(grid_x))
+        np.savetxt("map_data.txt", final_map, fmt="%2d")
+        np.savetxt("position_data.txt", np.array([grid_y, grid_x]), fmt="%d")
+        self.get_logger().info("Map is saved!")
+        # self.get_logger().info('Grid Y: %i Grid X: %i' % (grid_y, grid_x))
 
 
     def scan_callback(self, msg):
@@ -132,6 +168,7 @@ class AutoNav(Node):
         # np.savetxt(scanfile, self.laser_range)
         # replace 0's with nan
         self.laser_range[self.laser_range==0] = np.nan
+        # self.get_logger().info('Scan: ' + str(float(self.laser_range[-1])))
 
 
     # function to rotate the TurtleBot
@@ -236,8 +273,7 @@ class AutoNav(Node):
                     # check distances in front of TurtleBot and find values less
                     # than stop_distance
                     lri = (self.laser_range[front_angles]<float(stop_distance)).nonzero()
-                    # self.get_logger().info('Distances: %s' % str(lri))
-
+                    # self.get_logger().info('Distances: %s' % str(lri))	
                     # if the list is not empty
                     if(len(lri[0])>0):
                         # stop moving
