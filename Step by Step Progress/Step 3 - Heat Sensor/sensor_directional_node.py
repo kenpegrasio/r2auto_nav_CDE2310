@@ -30,6 +30,17 @@ class AMG8833Node(Node):
             print(["{0:.1f}".format(temp) for temp in row])
         print("\n")
 
+        #transpose matrix to find columns as rows
+        transposed = list(zip(*self.amg.pixels))
+        col_avgs = [sum(col)/len(col) for col in transposed]
+        col_maxs = [max(col)/len(col) for col in transposed]
+
+        max_avg_col_index = col_avgs.index(max(col_avgs))
+        max_max_col_index = col_maxs.index(max(col_maxs))
+
+        print(f"Column with Highest Average Temperature: {max_avg_col_index}")
+        print(f"Column with Highest Maximum Temperature: {max_max_col_index}")
+        print("\n")
 
 def main(args=None):
     rclpy.init(args=args)
