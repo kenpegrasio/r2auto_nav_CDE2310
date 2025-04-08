@@ -25,6 +25,17 @@ class AMG8833Node(Node):
 		for pin in self.motor_pins:
 			GPIO.setup(pin, GPIO.OUT)
 
+		# Enable pins for two motors
+		self.enable_pins = [13, 19]
+		for pin in self.enable_pins:
+				GPIO.setup(pin, GPIO.OUT)
+				GPIO.output(pin, True)
+
+		self.enable_pwms = [
+				GPIO.PWM(13, 50),  # Motor A
+				GPIO.PWM(19, 50)   # Motor B
+			]
+
 		# Servo GPIO setup
 		# GPIO.setmode(GPIO.BCM) # no need, alrdy set in imported library
 		self.servo_pin = 5
@@ -33,11 +44,14 @@ class AMG8833Node(Node):
 		self.servo_pwm.start(2.5)  # Neutral position
 
 	def spin_start(self):
-		GPIO.output(22, True)
-		GPIO.output(23, True)
-		GPIO.output(25, False)
-		GPIO.output(24, False)
-		# self.spin_stop()
+		# GPIO.output(22, True)
+		# GPIO.output(23, True)
+		# GPIO.output(25, False)
+		# GPIO.output(24, False)
+		for pin in self.motor_pins:
+			GPIO.output(pin, False)
+		for pin in self.enable_pwms:
+			pin.ChangeDutyCycle(30) # (30/50)% of max speed
 
 	def spin_stop(self):
 		for pin in self.motor_pins:
@@ -45,7 +59,7 @@ class AMG8833Node(Node):
 
 	def activate_servo(self):
 		# Move to 0°, then back to 180°
-		self.servo_pwm.ChangeDutyCycle(12.5)
+		self.servo_pwm.ChangeDutyCycle(10)
 		time.sleep(1)
 		self.servo_pwm.ChangeDutyCycle(2.5)
 		time.sleep(1)
