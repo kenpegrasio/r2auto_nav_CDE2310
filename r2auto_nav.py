@@ -19,6 +19,7 @@ from geometry_msgs.msg import Twist
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import String
 import numpy as np
 import math
 import time
@@ -27,12 +28,13 @@ import tf2_ros
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 # constants
+HEAT_ROTATE_ANGLE = 40
 WALL_THRESHOLD = 10
-wall_penalty = 1
-cluster_distance = 8
+wall_penalty = 6
+cluster_distance = 10
 localization_tolerance = 6
 rotatechange = 1
-speedchange = 0.065
+speedchange = 0.05
 dr = [-1,  0, 0, 1]
 dc = [ 0, -1, 1, 0]
 MOVE_COST = [1, 1, 1, 1]
@@ -92,6 +94,14 @@ class AutoNav(Node):
         self.occ_subscription  # prevent unused variable warning
         self.occdata = np.array([])
         
+        # create subscription to track heat location
+        self.heat_subscription = self.create_subscription(
+            String,
+            'heat_location',
+            self.heat_callback,
+            10)
+        self.heat_subscription
+
         # create subscription to track lidar
         self.scan_subscription = self.create_subscription(
             LaserScan,
@@ -99,9 +109,12 @@ class AutoNav(Node):
             self.scan_callback,
             qos_profile_sensor_data)
         self.scan_subscription  # prevent unused variable warning
+
         self.laser_range = np.array([])
         self.visited_points = set()
-        self.initial_angle = 0
+        self.shooting_area = set()
+        self.initial_angle = None
+        self.heat_location = None
 
         self.tfBuffer = tf2_ros.Buffer(cache_time=rclpy.duration.Duration(seconds=5.0))
         self.tfListener = tf2_ros.TransformListener(self.tfBuffer, self)
@@ -147,20 +160,16 @@ class AutoNav(Node):
                 if not self.isValid(nextrow, nextcol):
                     continue
                 
-                too_close_to_wall = False
+                cnt = 0
                 for penaltyx in range(-wall_penalty, wall_penalty + 1):
-                    if too_close_to_wall:
-                        break
                     for penaltyy in range(-wall_penalty, wall_penalty + 1):
                         next_row = nextrow + penaltyx
                         next_col = nextcol + penaltyy
                         if not self.isValid(next_row, next_col):
-                            too_close_to_wall = True
+                            cnt += 1
                             break
-                if too_close_to_wall:
-                    continue
 
-                nextcost = cost + MOVE_COST[idx]
+                nextcost = cost + MOVE_COST[idx] + cnt * 50
                 if (nextrow, nextcol) not in cost_map or nextcost < cost_map[(nextrow, nextcol)]:
                     cost_map[(nextrow, nextcol)] = nextcost
                     parent_map[(nextrow, nextcol)] = (currow, curcol)
@@ -193,7 +202,7 @@ class AutoNav(Node):
             trans = self.tfBuffer.lookup_transform(
                 'map', 'base_link', 
                 rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.1)
+                timeout=rclpy.duration.Duration(seconds=0.5)
             )
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
             print(e)
@@ -237,7 +246,10 @@ class AutoNav(Node):
         # replace 0's with nan
         self.laser_range[self.laser_range==0] = np.nan
         # self.get_logger().info('Scan: ' + str(float(self.laser_range[-1])))
-
+    
+    def heat_callback(self, msg):
+        self.heat_location = msg.data
+        self.get_logger().info(f'Heat Callback got triggered: {msg.data}')
 
     # function to rotate the TurtleBot
     def rotatebot(self, rot_angle):
@@ -388,7 +400,10 @@ class AutoNav(Node):
         self.get_logger().info(f'Path produced by A* Search')
         for row, col in points[1:]:
             self.get_logger().info(f'Row Col: {row}, {col}')
+        please_redirect = False
         for row, col in points[1:]:
+            if please_redirect:
+                break
             self.get_logger().info(f'Moving to {row}, {col}')
             distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
             first_time = True
@@ -399,10 +414,23 @@ class AutoNav(Node):
 
                 self.get_logger().info(f'Current row col: {self.currow}, {self.curcol}')
                 # self.get_logger().info(f'Target row col: {row}, {col}')
-                # self.get_logger().info(f'Current Angle: {self.initial_angle}')
                 # self.get_logger().info(f'Distance to target: {distance}')
 
                 distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
+
+                if self.heat_location != None:
+                    if self.heat_location == 'right':
+                        self.stopbot()
+                        self.rotatebot(HEAT_ROTATE_ANGLE)
+                    
+                    if self.heat_location == 'left':
+                        self.stopbot()
+                        self.rotatebot(-HEAT_ROTATE_ANGLE)
+                    
+                    if self.heat_location == 'ok':
+                        self.stopbot()
+                        please_redirect = True
+                        break
 
                 self.visited_points.add((self.cur_pos.x, self.cur_pos.y))
 
@@ -413,11 +441,12 @@ class AutoNav(Node):
                     self.get_logger().info(f'Head up to the angle of {map_angle}')
 
                     # Rotate the robot to that angle
-                    self.get_logger().info(f'Current Angle: {self.initial_angle}')
-                    angle_to_rotate = (map_angle - self.initial_angle + 360) % 360
+                    current_angle = math.degrees(self.yaw) + 180
+                    self.get_logger().info(f'Current Angle: {current_angle}')
+                    relative_angle = (current_angle - self.initial_angle + 360) % 360
+                    angle_to_rotate = (map_angle - relative_angle + 360) % 360
                     self.rotatebot(angle_to_rotate)
-                    self.initial_angle = (self.initial_angle + angle_to_rotate) % 360
-                    self.get_logger().info(f'Current Angle: {self.initial_angle}')
+                    self.get_logger().info(f'Current Angle: {math.degrees(self.yaw)}')
 
                     # Publish the twist
                     twist.linear.x = speedchange
@@ -435,7 +464,7 @@ class AutoNav(Node):
         while time.time() - start_time < timeout:
             rclpy.spin_once(self, timeout_sec=0.1)  # Short timeout for spinning once
         
-        self.initial_angle = 0
+        self.initial_angle = math.degrees(self.yaw) + 180
 
         while True:
             print(f"Current position is at {self.currow}, {self.curcol}")
