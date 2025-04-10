@@ -7,6 +7,10 @@ from rclpy.node import Node
 from std_msgs.msg import String, Float32MultiArray
 import RPi.GPIO as GPIO
 
+FRONT_HEAT_LAUNCH = 33
+FRONT_HEAT_FORWARD = 29
+LEFT_RIGHT_HEAT_THRESHOLD = 26
+
 class AMG8833Node(Node):
 	def __init__(self):
 		super().__init__('amg8833_node')
@@ -45,12 +49,17 @@ class AMG8833Node(Node):
 		self.servo_pwm.start(2.5)  # Neutral position
 
 	def spin_start(self):
-		# GPIO.output(22, True)
-		# GPIO.output(23, True)
-		# GPIO.output(25, False)
-		# GPIO.output(24, False)
-		for pin in self.motor_pins:
-			GPIO.output(pin, False)
+		GPIO.output(22, True)
+		GPIO.output(23, False)
+		GPIO.output(25, True)
+		GPIO.output(24, False)
+		time.sleep(1)
+		GPIO.output(22, True)
+		GPIO.output(23, True)
+		GPIO.output(25, False)
+		GPIO.output(24, False)
+		# for pin in self.motor_pins:
+		# 	GPIO.output(pin, False)
 		for pin in self.enable_pwms:
 			pin.ChangeDutyCycle(30) # (30/50)% of max speed
 
@@ -78,33 +87,45 @@ class AMG8833Node(Node):
 		print("\n")
 
 		# Analyze columns
-		transposed = list(zip(*self.amg.pixels))
-		col_avgs = [sum(col)/len(col) for col in transposed]
-		max_avg_col_index = col_avgs.index(max(col_avgs))
+		# transposed = list(zip(*self.amg.pixels))
+		# col_avgs = [sum(col)/len(col) for col in transposed]
+		# max_avg_col_index = col_avgs.index(max(col_avgs))
 
-		print(f"Column with Highest Average Temperature: {max_avg_col_index}")
+		# print(f"Column with Highest Average Temperature: {max_avg_col_index}")
+		
+		print("Max element per column")
+		max_element_per_col = []
+		for idxcol in range(8):
+			maxcurcol = -1
+			for idxrow in range(8):
+				maxcurcol = max(maxcurcol, self.amg.pixels[idxrow][idxcol])
+			print(maxcurcol, end=' ')
+			max_element_per_col.append(maxcurcol)
+		print()
 
-		max_element = max([temp for row in self.amg.pixels for temp in row])
+		# max_element = max([temp for row in self.amg.pixels for temp in row])
 
-		if (max_element>33.5):
-			if max_avg_col_index in [2, 3, 4, 5]:
-				print("Heat detected ahead! Moving forward and activating servo.")
-				self.publisher.publish(String(data='ok'))
-				self.spin_start()
-				time.sleep(1)
-				self.activate_servo()	# first ball
-				time.sleep(1)
-				self.activate_servo()	# second ball
-				time.sleep(1)
-				self.activate_servo()	# third ball
-				time.sleep(1)
-				self.spin_stop()
-			elif max_avg_col_index in [0, 1]:
-				print("Heat is on the Right")
-				self.publisher.publish(String(data='right'))
-			elif max_avg_col_index in [6, 7]:
-				print("Heat is on the Left")
-				self.publisher.publish(String(data='left'))
+		if max(max_element_per_col[2:6]) > FRONT_HEAT_LAUNCH:
+			print("Heat is detected in front! Activating servo.")
+			self.publisher.publish(String(data='ok'))
+			self.spin_start()
+			time.sleep(1)
+			self.activate_servo()	# first ball
+			time.sleep(1)
+			self.activate_servo()	# second ball
+			time.sleep(1)
+			self.activate_servo()	# third ball
+			time.sleep(1)
+			self.spin_stop()
+		elif max(max_element_per_col[2:6]) > FRONT_HEAT_FORWARD:
+			print("Heat is detected in front. Move closer please!")
+			self.publisher.publish(String(data='forward'))
+		elif max(max_element_per_col[:2]) > LEFT_RIGHT_HEAT_THRESHOLD:
+			print("Heat is on the Right")
+			self.publisher.publish(String(data='right'))
+		elif max(max_element_per_col[6:]) > LEFT_RIGHT_HEAT_THRESHOLD:
+			print("Heat is on the Left")
+			self.publisher.publish(String(data='left'))
 		else:
 			print("No heat ahead. Continue Exploration.")
 			self.publisher.publish(String(data='null'))
