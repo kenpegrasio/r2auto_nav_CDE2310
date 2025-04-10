@@ -28,7 +28,7 @@ import tf2_ros
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 # constants
-HEAT_ROTATE_ANGLE = 40
+HEAT_ROTATE_ANGLE = 10
 WALL_THRESHOLD = 10
 wall_penalty = 6
 cluster_distance = 10
@@ -419,14 +419,20 @@ class AutoNav(Node):
                 distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
 
                 if self.heat_location != None:
-                    if self.heat_location == 'right':
-                        self.stopbot()
-                        self.rotatebot(HEAT_ROTATE_ANGLE)
-                    
-                    if self.heat_location == 'left':
-                        self.stopbot()
-                        self.rotatebot(-HEAT_ROTATE_ANGLE)
-                    
+                    while self.heat_location == 'forward' or self.heat_location == 'right' or self.heat_location == 'left':
+                        if self.heat_location == 'right':
+                            self.stopbot()
+                            self.rotatebot(-HEAT_ROTATE_ANGLE)
+                        
+                        if self.heat_location == 'left':
+                            self.stopbot()
+                            self.rotatebot(HEAT_ROTATE_ANGLE)
+                        
+                        if self.heat_location == 'forward':
+                            self.stopbot()
+                            twist.linear.x = speedchange
+                            self.publisher_.publish(twist)
+
                     if self.heat_location == 'ok':
                         self.stopbot()
                         please_redirect = True
