@@ -30,7 +30,7 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 # constants
 HEAT_ROTATE_ANGLE = 10
 WALL_THRESHOLD = 10
-wall_penalty = 6
+wall_penalty = 8
 cluster_distance = 10
 localization_tolerance = 6
 rotatechange = 1
@@ -202,7 +202,7 @@ class AutoNav(Node):
             trans = self.tfBuffer.lookup_transform(
                 'map', 'base_link', 
                 rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.5)
+                timeout=rclpy.duration.Duration(seconds=1)
             )
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
             print(e)
@@ -403,6 +403,7 @@ class AutoNav(Node):
         please_redirect = False
         for row, col in points[1:]:
             if please_redirect:
+                self.get_logger().info('Please Redirect!')
                 break
             self.get_logger().info(f'Moving to {row}, {col}')
             distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
@@ -437,6 +438,8 @@ class AutoNav(Node):
                         self.stopbot()
                         please_redirect = True
                         break
+                    else:
+                        first_time = True
 
                 self.visited_points.add((self.cur_pos.x, self.cur_pos.y))
 
