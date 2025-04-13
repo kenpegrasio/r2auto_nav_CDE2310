@@ -9,17 +9,18 @@ class Ball(Node):
         super().__init__('ball_node')
         
         # create subscription to track heat location
-        self.heat_subscription = self.create_subscription(
+        self.launch_ball_subscription = self.create_subscription(
             String,
-            'heat_location',
-            self.heat_callback,
+            'launch_ball',
+            self.launch_ball_callback,
             10)
-        self.heat_subscription
+        self.launch_ball_subscription
 
-    def heat_callback(self, msg):
-        self.heat_location = msg.data
-        self.get_logger().info(f'Heat Callback got triggered: {msg.data}')
-        if self.heat_location == 'ok':
+    def launch_ball_callback(self, msg):
+        self.launch_ball_signal = msg.data
+        self.get_logger().info(f'Launch Ball Callback got triggered: {msg.data}')
+        if self.launch_ball_signal == 'ok':
+            print('Lauching the ball!')
             GPIO.setmode(GPIO.BCM)
             motor_pins = [23, 25] # BCM pins
             for pin in motor_pins:
@@ -45,23 +46,24 @@ class Ball(Node):
             servo_pwm = GPIO.PWM(servo_pin, 50)  # 50Hz
             servo_pwm.start(2.5)  # Neutral position
 
-            servo_pwm.ChangeDutyCycle(10)
-            time.sleep(1)
-            servo_pwm.ChangeDutyCycle(2.5)
-            time.sleep(1)
-            time.sleep(1)
 
-            servo_pwm.ChangeDutyCycle(10)
-            time.sleep(1)
-            servo_pwm.ChangeDutyCycle(2.5)
-            time.sleep(1)
-            time.sleep(1)
+            time.sleep(2) # Stop for 2 seconds
 
-            servo_pwm.ChangeDutyCycle(10)
+            servo_pwm.ChangeDutyCycle(10) # Launch the first ball
             time.sleep(1)
             servo_pwm.ChangeDutyCycle(2.5)
+
+            time.sleep(4) # Stop for 4 seconds 
+
+            servo_pwm.ChangeDutyCycle(10) # Launch the second ball
             time.sleep(1)
+            servo_pwm.ChangeDutyCycle(2.5)
+
+            time.sleep(2) # Stop for 2 seconds
+
+            servo_pwm.ChangeDutyCycle(10) # Launch the third ball
             time.sleep(1)
+            servo_pwm.ChangeDutyCycle(2.5)
 
             GPIO.cleanup()
             servo_pwm.stop()

@@ -5,9 +5,9 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-FRONT_HEAT_LAUNCH = 33
-FRONT_HEAT_FORWARD = 29
-LEFT_RIGHT_HEAT_THRESHOLD = 26
+FRONT_HEAT_LAUNCH = 37
+FRONT_HEAT_FORWARD = 32
+LEFT_RIGHT_HEAT_THRESHOLD = 33
 
 class AMG8833Node(Node):
 	def __init__(self):
