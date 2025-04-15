@@ -29,14 +29,15 @@ from tf2_ros import LookupException, ConnectivityException, ExtrapolationExcepti
 
 # constants
 SHOOTING_AREA_THRESHOLD = 15 * 15
-RESET_VISITED_POINTS_THRESHOLD = 175
+RESET_VISITED_POINTS_THRESHOLD = 300
 HEAT_ROTATE_ANGLE = 10
 WALL_THRESHOLD = 10
-wall_penalty = 4
+DISTANCE_THRESHOLD = 30
+wall_penalty = 3
 cluster_distance = 6
 localization_tolerance = 4
-rotatechange = 1.25
-speedchange = 0.1
+rotatechange = 1.5
+speedchange = 0.125
 dr = [-1,  0, 0, 1]
 dc = [ 0, -1, 1, 0]
 MOVE_COST = [1, 1, 1, 1]
@@ -377,7 +378,7 @@ class AutoNav(Node):
         targetrow, targetcol = -1, -1
         for row in range(num_rows):
             for col in range(num_cols):
-                if highest_cost < cost_map[row][col]:
+                if highest_cost < cost_map[row][col] and cost_map[row][col] <= DISTANCE_THRESHOLD:
                     highest_cost = cost_map[row][col]
                     targetrow = row
                     targetcol = col
@@ -526,7 +527,7 @@ class AutoNav(Node):
     def mover(self):
         self.get_logger().info('Triggering all callbacks for 5 seconds')
         start_time = time.time()
-        timeout = 5
+        timeout = 3
         while time.time() - start_time < timeout:
             rclpy.spin_once(self, timeout_sec=0.1)
         
@@ -540,7 +541,7 @@ class AutoNav(Node):
             if targetrow == -1 and targetcol == -1:
                 start_time = time.time()
                 # Trigger all callbacks for 5 seconds 
-                timeout = 5
+                timeout = 3
                 while time.time() - start_time < timeout:
                     rclpy.spin_once(self, timeout_sec=0.1)
 
@@ -574,7 +575,7 @@ class AutoNav(Node):
 
             self.get_logger().info('Triggering all callbacks for 5 seconds')
             start_time = time.time()
-            timeout = 5
+            timeout = 3
             while time.time() - start_time < timeout:
                 rclpy.spin_once(self, timeout_sec=0.1)
 
