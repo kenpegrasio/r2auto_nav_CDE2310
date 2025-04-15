@@ -28,16 +28,24 @@ import tf2_ros
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 # constants
+SHOOTING_AREA_THRESHOLD = 15 * 15
+RESET_VISITED_POINTS_THRESHOLD = 300
 HEAT_ROTATE_ANGLE = 10
 WALL_THRESHOLD = 10
-wall_penalty = 6
-cluster_distance = 10
-localization_tolerance = 6
-rotatechange = 1
-speedchange = 0.05
+DISTANCE_THRESHOLD = 30
+wall_penalty = 3
+cluster_distance = 6
+localization_tolerance = 4
+rotatechange = 1.5
+speedchange = 0.125
 dr = [-1,  0, 0, 1]
 dc = [ 0, -1, 1, 0]
 MOVE_COST = [1, 1, 1, 1]
+
+# constants for safety
+front_angle = 30
+front_angles = range(-front_angle,front_angle+1,1)
+stop_distance = 0.15
 
 # code from https://automaticaddison.com/how-to-convert-a-quaternion-into-euler-angles-in-python/
 def euler_from_quaternion(x, y, z, w):
@@ -69,7 +77,9 @@ class AutoNav(Node):
         
         # create publisher for moving TurtleBot
         self.publisher_ = self.create_publisher(Twist,'cmd_vel',10)
-        # self.get_logger().info('Created publisher')
+
+        # create publisher to launch the ball
+        self.launch_ball_publisher = self.create_publisher(String, 'launch_ball', 10)
         
         # create subscription to track orientation
         self.odom_subscription = self.create_subscription(
@@ -111,7 +121,7 @@ class AutoNav(Node):
         self.scan_subscription  # prevent unused variable warning
 
         self.laser_range = np.array([])
-        self.visited_points = set()
+        self.visited_points = []
         self.shooting_area = set()
         self.initial_angle = None
         self.heat_location = None
@@ -123,8 +133,8 @@ class AutoNav(Node):
         rowsize, colsize = self.cur_map.shape
         return 0 <= row < rowsize and 0 <= col < colsize and self.cur_map[row][col] < WALL_THRESHOLD and self.cur_map[row][col] != -1
 
-    # def heuristic(self, curpoint, targetpoint):
-    #     return (targetpoint[0] - curpoint[0]) ** 2 + (targetpoint[1] - curpoint[1]) ** 2
+    def heuristic(self, curpoint, targetpoint):
+        return (targetpoint[0] - curpoint[0]) ** 2 + (targetpoint[1] - curpoint[1]) ** 2
 
     def reconstruct_path(self, parent_map, start, target):
         path = []
@@ -167,9 +177,8 @@ class AutoNav(Node):
                         next_col = nextcol + penaltyy
                         if not self.isValid(next_row, next_col):
                             cnt += 1
-                            break
 
-                nextcost = cost + MOVE_COST[idx] + cnt * 50
+                nextcost = cost + MOVE_COST[idx] + cnt * 200
                 if (nextrow, nextcol) not in cost_map or nextcost < cost_map[(nextrow, nextcol)]:
                     cost_map[(nextrow, nextcol)] = nextcost
                     parent_map[(nextrow, nextcol)] = (currow, curcol)
@@ -202,7 +211,7 @@ class AutoNav(Node):
             trans = self.tfBuffer.lookup_transform(
                 'map', 'base_link', 
                 rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=0.5)
+                timeout=rclpy.duration.Duration(seconds=1)
             )
         except (LookupException, ConnectivityException, ExtrapolationException) as e:
             print(e)
@@ -233,7 +242,9 @@ class AutoNav(Node):
         
         self.currow = self.map_width - 1 - grid_x
         self.curcol = self.map_height - 1 - grid_y
-        self.visited_points.add((self.cur_pos.x, self.cur_pos.y))
+        self.visited_points.append((self.cur_pos.x, self.cur_pos.y))
+        while len(self.visited_points) > RESET_VISITED_POINTS_THRESHOLD:
+            self.visited_points.pop(0)
 
         # self.get_logger().info("Robot position is at " + str(self.currow) + " " + str(self.curcol))
         # self.get_logger().info("The Grid value is " + str(self.cur_map[self.currow][self.curcol]))
@@ -315,42 +326,63 @@ class AutoNav(Node):
         twist = Twist()
         twist.linear.x = 0.0
         twist.angular.z = 0.0
-        # time.sleep(1)
         self.publisher_.publish(twist)
         self.get_logger().info('Stop the robot')
 
 
     def find_target(self):
-        dis = -1
-        targetrow, targetcol = -1, -1
         num_rows, num_cols = self.cur_map.shape
-        self.get_logger().info('Finding Target')
-        for idxrow in range(num_rows):
-            for idxcol in range(num_cols):
+        cost_map = [[-1 for _ in range(num_cols)] for _ in range(num_rows)]
+        for x, y in self.visited_points:
+            grid_x = round((x - self.map_origin.x) / self.map_res)
+            grid_y = round(((y - self.map_origin.y) / self.map_res))
+            convertx = self.map_width - 1 - grid_x
+            converty = self.map_height - 1 - grid_y
+            cost_map[convertx][converty] = 0
+        points = []
+        for x, y in self.visited_points:
+            grid_x = round((x - self.map_origin.x) / self.map_res)
+            grid_y = round(((y - self.map_origin.y) / self.map_res))
+            convertx = self.map_width - 1 - grid_x
+            converty = self.map_height - 1 - grid_y
+            heapq.heappush(points, (0, convertx, converty))
+        while points:
+            curcost, currow, curcol = heapq.heappop(points)
+            for idx in range(4):
+                nextrow = currow + dr[idx]
+                nextcol = curcol + dc[idx]
+
+                if not self.isValid(nextrow, nextcol):
+                    continue
+
                 too_close_to_wall = False
                 for penaltyx in range(-wall_penalty, wall_penalty + 1):
                     if too_close_to_wall:
                         break
                     for penaltyy in range(-wall_penalty, wall_penalty + 1):
-                        next_row = idxrow + penaltyx
-                        next_col = idxcol + penaltyy
+                        next_row = nextrow + penaltyx
+                        next_col = nextcol + penaltyy
                         if not self.isValid(next_row, next_col):
                             too_close_to_wall = True
-                            break
                 if too_close_to_wall:
                     continue
-                if self.cur_map[idxrow][idxcol] == 0:
-                    min_dis = math.inf
-                    for x, y in self.visited_points:
-                        grid_x = round((x - self.map_origin.x) / self.map_res)
-                        grid_y = round(((y - self.map_origin.y) / self.map_res))
-                        convertx = self.map_width - 1 - grid_x
-                        converty = self.map_height - 1 - grid_y
-                        min_dis = min(min_dis, (idxrow - convertx) ** 2 + (idxcol - converty) ** 2)
-                    if dis < min_dis:
-                        dis = min_dis
-                        targetrow = idxrow
-                        targetcol = idxcol
+
+                nextcost = curcost + MOVE_COST[idx]
+                if cost_map[nextrow][nextcol] == -1 or nextcost < cost_map[nextrow][nextcol]:
+                    cost_map[nextrow][nextcol] = nextcost
+                    heapq.heappush(points, (nextcost, nextrow, nextcol))
+        
+        np.savetxt("cost_map.txt", cost_map, fmt="%3d")
+
+        highest_cost = 0
+        targetrow, targetcol = -1, -1
+        for row in range(num_rows):
+            for col in range(num_cols):
+                if highest_cost < cost_map[row][col] and cost_map[row][col] <= DISTANCE_THRESHOLD:
+                    highest_cost = cost_map[row][col]
+                    targetrow = row
+                    targetcol = col
+
         return (targetrow, targetcol)
 
     def cluster_path(self, find_path):
@@ -403,10 +435,11 @@ class AutoNav(Node):
         please_redirect = False
         for row, col in points[1:]:
             if please_redirect:
+                self.get_logger().info('Redirecting...')
                 break
             self.get_logger().info(f'Moving to {row}, {col}')
             distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
-            first_time = True
+
             while distance > localization_tolerance ** 2:
                 for _ in range(5):
                     rclpy.spin_once(self)
@@ -418,57 +451,85 @@ class AutoNav(Node):
 
                 distance = self.point_to_point_distance((self.currow, self.curcol), (row, col))
 
-                if self.heat_location != None:
-                    while self.heat_location == 'forward' or self.heat_location == 'right' or self.heat_location == 'left':
+                # Calculate the shortest distance to the shooting areas
+                shortest_to_shooting_area = math.inf
+                for x, y in self.shooting_area:
+                    grid_x = round((x - self.map_origin.x) / self.map_res)
+                    grid_y = round(((y - self.map_origin.y) / self.map_res))
+                    convertx = self.map_width - 1 - grid_x
+                    converty = self.map_height - 1 - grid_y
+                    shortest_to_shooting_area = min(shortest_to_shooting_area, self.point_to_point_distance((convertx, converty), (row, col)))
+                print(f'Shortest distance to shooting area: {shortest_to_shooting_area}')
+
+                # If heat is detected and it is not one of the shooting area before, shoot
+                if self.heat_location != None and shortest_to_shooting_area > SHOOTING_AREA_THRESHOLD:
+                    while self.heat_location == 'right' or self.heat_location == 'left' or self.heat_location == 'forward':
+                        for _ in range(5):
+                            rclpy.spin_once(self)
+                            time.sleep(0.1)
                         if self.heat_location == 'right':
+                            self.get_logger().info('Detecting heat in the right')
                             self.stopbot()
                             self.rotatebot(-HEAT_ROTATE_ANGLE)
-                        
-                        if self.heat_location == 'left':
+                        elif self.heat_location == 'left':
+                            self.get_logger().info('Detecting heat in the left')
                             self.stopbot()
                             self.rotatebot(HEAT_ROTATE_ANGLE)
-                        
-                        if self.heat_location == 'forward':
+                        elif self.heat_location == 'forward':
+                            self.get_logger().info('Detecting heat in front')
                             self.stopbot()
                             twist.linear.x = speedchange
                             self.publisher_.publish(twist)
-
-                    if self.heat_location == 'ok':
+                    
+                    if self.heat_location == 'ok' and shortest_to_shooting_area > SHOOTING_AREA_THRESHOLD:
+                        self.get_logger().info('SHOOTTTTT!!! Stop for 9 seconds')
                         self.stopbot()
+                        self.launch_ball_publisher.publish(String(data='ok'))
+                        self.shooting_area.add((self.cur_pos.x, self.cur_pos.y))
                         please_redirect = True
+                        time.sleep(9)
                         break
 
-                self.visited_points.add((self.cur_pos.x, self.cur_pos.y))
+                self.visited_points.append((self.cur_pos.x, self.cur_pos.y))
+                while len(self.visited_points) > RESET_VISITED_POINTS_THRESHOLD:
+                    self.visited_points.pop(0)
 
-                if first_time:
-                    # Calculate the angle between (self.currow, self.curcol) and (row, col)
-                    map_angle = self.calculate_cw_rotation_angle((self.currow, self.curcol), (row, col))
-                    map_angle = 360 - map_angle
-                    self.get_logger().info(f'Head up to the angle of {map_angle}')
+                # Calculate the angle between (self.currow, self.curcol) and (row, col)
+                map_angle = self.calculate_cw_rotation_angle((self.currow, self.curcol), (row, col))
+                map_angle = 360 - map_angle
+                self.get_logger().info(f'Head up to the angle of {map_angle}')
 
-                    # Rotate the robot to that angle
-                    current_angle = math.degrees(self.yaw) + 180
-                    self.get_logger().info(f'Current Angle: {current_angle}')
-                    relative_angle = (current_angle - self.initial_angle + 360) % 360
-                    angle_to_rotate = (map_angle - relative_angle + 360) % 360
-                    self.rotatebot(angle_to_rotate)
-                    self.get_logger().info(f'Current Angle: {math.degrees(self.yaw)}')
+                # Rotate the robot to that angle
+                current_angle = math.degrees(self.yaw) + 180
+                self.get_logger().info(f'Current Angle: {current_angle}')
+                relative_angle = (current_angle - self.initial_angle + 360) % 360
+                angle_to_rotate = (map_angle - relative_angle + 360) % 360
+                self.rotatebot(angle_to_rotate)
+                self.get_logger().info(f'Current Angle: {math.degrees(self.yaw)}')
 
-                    # Publish the twist
-                    twist.linear.x = speedchange
-                    self.publisher_.publish(twist)
-                    first_time = False
+                # Publish the twist
+                twist.linear.x = speedchange
+                self.publisher_.publish(twist)
+                
+                # SAFETY PURPOSES: if it is too near to wall and not the time to redirect, stop the bot!
+                # if self.laser_range.size != 0:
+                #     self.get_logger().info(f'Something near is detected, STOP BRO!')
+                #     lri = (self.laser_range[front_angles] < float(stop_distance)).nonzero()
+                #     if (len(lri[0]) > 0):
+                #         self.stopbot()
+                #         please_redirect = True
+                #         break
+
             self.stopbot()
         self.can_update = True
         self.get_logger().info(f'Path traversed successfully')
 
     def mover(self):
-        # Trigger all callbacks with a loop and timeout
         self.get_logger().info('Triggering all callbacks for 5 seconds')
         start_time = time.time()
-        timeout = 5  # Set a short timeout to allow callbacks to be triggered
+        timeout = 3
         while time.time() - start_time < timeout:
-            rclpy.spin_once(self, timeout_sec=0.1)  # Short timeout for spinning once
+            rclpy.spin_once(self, timeout_sec=0.1)
         
         self.initial_angle = math.degrees(self.yaw) + 180
 
@@ -479,41 +540,44 @@ class AutoNav(Node):
 
             if targetrow == -1 and targetcol == -1:
                 start_time = time.time()
-                timeout = 5  # Set a short timeout to allow callbacks to be triggered
+                # Trigger all callbacks for 5 seconds 
+                timeout = 3
                 while time.time() - start_time < timeout:
-                    rclpy.spin_once(self, timeout_sec=0.1)  # Short timeout for spinning once
+                    rclpy.spin_once(self, timeout_sec=0.1)
 
+                # Save map to a file for identification purposes
                 edited_map = self.cur_map
-                np.savetxt("letsgo.txt", edited_map, fmt="%2d")
+                np.savetxt("map.txt", edited_map, fmt="%2d")
                 continue
 
             find_path = self.astar(targetrow, targetcol)
             clustered_path = self.cluster_path(find_path)
             
-            # Edit map and save to a text file
+            # Annotate map and save to a text file
             edited_map = self.cur_map
             for x,y in find_path:
                 edited_map[x][y] = -8 # path generated by the A* search
             if clustered_path != None:
                 for x,y in clustered_path:
                     edited_map[x][y] = -9 # clustered path
-            edited_map[self.currow][self.curcol] = -6
+            edited_map[self.currow][self.curcol] = -6 # origin 
             for x, y in self.visited_points:
                 grid_x = round((x - self.map_origin.x) / self.map_res)
                 grid_y = round(((y - self.map_origin.y) / self.map_res))
                 convertx = self.map_width - 1 - grid_x
                 converty = self.map_height - 1 - grid_y
-                edited_map[convertx][converty] = -2
-            edited_map[targetrow][targetcol] = -5
-            np.savetxt("letsgo.txt", edited_map, fmt="%2d")
+                edited_map[convertx][converty] = -2 # visited points
+            edited_map[targetrow][targetcol] = -5 # target point 
+            np.savetxt("map.txt", edited_map, fmt="%2d")
 
             self.move_through_path(clustered_path)
             self.stopbot()
+
             self.get_logger().info('Triggering all callbacks for 5 seconds')
             start_time = time.time()
-            timeout = 5  # Set a short timeout to allow callbacks to be triggered
+            timeout = 3
             while time.time() - start_time < timeout:
-                rclpy.spin_once(self, timeout_sec=0.1)  # Short timeout for spinning once
+                rclpy.spin_once(self, timeout_sec=0.1)
 
 
 def main(args=None):

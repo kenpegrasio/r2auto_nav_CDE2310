@@ -24,11 +24,11 @@ def forward(sec):
     motor2 = GPIO.PWM(13, 1000)   # Motor B
     motor_pins = [ 23, 25]
     for pin in motor_pins:
-    	GPIO.output(pin,False)
+        GPIO.output(pin,False)
     motor1.start(0)
     motor2.start(0)
-    motor1.ChangeDutyCycle(50)
-    motor2.ChangeDutyCycle(50)
+    motor1.ChangeDutyCycle(75)
+    motor2.ChangeDutyCycle(75)
     # for pin in motor_pins:
     #     pin.ChangeDutyCycle(50)
     # GPIO.output(22, True) #
@@ -49,4 +49,3 @@ def forward(sec):
 
 
 forward(5)
-
