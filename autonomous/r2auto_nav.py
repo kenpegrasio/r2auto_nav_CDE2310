@@ -28,16 +28,16 @@ import tf2_ros
 from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
 
 # constants
-SHOOTING_AREA_THRESHOLD = 15 * 15
-RESET_VISITED_POINTS_THRESHOLD = 300
+SHOOTING_AREA_THRESHOLD = 40 * 40 
+RESET_VISITED_POINTS_THRESHOLD = 500
 HEAT_ROTATE_ANGLE = 10
 WALL_THRESHOLD = 10
 DISTANCE_THRESHOLD = 30
-wall_penalty = 3
+wall_penalty = 4
 cluster_distance = 6
 localization_tolerance = 4
-rotatechange = 1.5
-speedchange = 0.125
+rotatechange = 1.75
+speedchange = 0.15
 dr = [-1,  0, 0, 1]
 dc = [ 0, -1, 1, 0]
 MOVE_COST = [1, 1, 1, 1]

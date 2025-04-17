@@ -4,7 +4,19 @@ Autonomous navigation system using ROS2 and R-SLAM on TurtleBot3. This repositor
 
 ## 🚀 Quick Start
 
-### 🧪 Testing in Gazebo (Virtual Environment)
+### Add this repository to your local environment 
+
+1. **Clone this repository**
+   ```bash
+   git clone https://github.com/kenpegrasio/r2auto_nav_CDE2310.git
+   ```
+
+2. **Go to the folder**
+   ```bash
+   cd r2auto_nav_CDE2310
+   ```
+
+### 🧪 Navigation Testing in Gazebo (Virtual Environment)
 
 1. **Launch Gazebo Simulation:**
 
@@ -21,12 +33,13 @@ Autonomous navigation system using ROS2 and R-SLAM on TurtleBot3. This repositor
 3. **Run Autonomous Navigation Script:**
 
    ```bash
+   cd autonomous
    python3 r2auto_nav.py
    ```
 
 ---
 
-### 🌍 Testing in the Real World
+### 🌍 System Testing in the Real World (Autonomous)
 
 1. **Connect to the Raspberry Pi:**
 
@@ -56,10 +69,69 @@ Autonomous navigation system using ROS2 and R-SLAM on TurtleBot3. This repositor
    ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
    ```
 
-4. **Run Autonomous Navigation Script:**
+4. **Activate the heat sensor node (on Raspberry Pi terminal)**
+   ```bash
+   python3 elec_nodes.py
+   ```
+
+5. **Activate the launching ball node (on Raspberry Pi terminal)**
+   ```bash
+   python3 ball_nodes.py
+   ```
+
+6. **Run Autonomous Navigation Script:**
 
    ```bash
+   cd autonomous
    python3 r2auto_nav.py
+   ```
+
+---
+
+### 🌍 System Testing in the Real World (Manual)
+
+1. **Connect to the Raspberry Pi:**
+
+   Try connecting with the alias:
+
+   ```bash
+   sshrp
+   ```
+
+   > ⚠️ If this returns an error like:  
+   > `ssh: Could not resolve hostname : No address associated with hostname`  
+   > Connect manually instead:
+
+   ```bash
+   ssh ubuntu@<ip-address>
+   ```
+
+2. **Activate Components (on Raspberry Pi terminal):**
+
+   ```bash
+   rosbu
+   ```
+
+3. **Launch R-SLAM (Cartographer) on the Robot:**
+
+   ```bash
+   ros2 launch turtlebot3_cartographer cartographer.launch.py use_sim_time:=True
+   ```
+
+4. **Activate the heat sensor node (on Raspberry Pi terminal)**
+   ```bash
+   python3 white_flag_code.py
+   ```
+
+5. **Activate the launching ball node (on Raspberry Pi terminal)**
+   ```bash
+   python3 ball_nodes.py
+   ```
+
+6. **Run RTELEOP for manual WASD control:**
+
+   ```bash
+   rteleop
    ```
 
 ---
