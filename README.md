@@ -24,7 +24,6 @@ This project addresses the "Earthquake Problem": an autonomous TurtleBot must na
 
 **Key Features**:
 - Autonomous SLAM navigation with ROS2
-- Frontier-based maze exploration and pathfinding
 - Heat detection using AMG8833 sensor
 - Custom-built ball launching mechanism using flywheels
 - Modular and repairable payload design
