@@ -1,5 +1,5 @@
 
-# CDE2310 - Autonomous Flare-Launching TurtleBot
+# CDE2310 - Autonomous Earthquake Rescuer Robot
 
 > *National University of Singapore*  
 > AY2024/2025 Semester 2 – **Group 2**
@@ -23,7 +23,7 @@
 This project addresses the "Earthquake Problem": an autonomous TurtleBot must navigate a randomized maze, detect survivors using heat signatures (incandescent lamps), and launch ping pong ball flares to signal Search & Rescue teams.
 
 **Key Features**:
-- Autonomous SLAM navigation with ROS2
+- Autonomous navigation with ROS2 and Python
 - Heat detection using AMG8833 sensor
 - Custom-built ball launching mechanism using flywheels
 - Modular and repairable payload design
